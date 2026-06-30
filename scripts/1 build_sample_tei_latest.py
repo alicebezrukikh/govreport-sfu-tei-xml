@@ -1723,22 +1723,41 @@ def build_document(config: DocumentConfig, natasha_models: NatashaModels | None)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build TEI XML from OCR plain text files with page break markers.")
-    parser.add_argument("--manifest", default="data/govreport_manifest.json", help="Manifest JSON with text paths and metadata.")
+    parser.add_argument("--manifest", default="/content/govreport_manifest_all.json", help="Manifest JSON with text paths and metadata.")
     parser.add_argument("--output-dir", default="tei_reports", help="Directory for generated TEI files.")
     parser.add_argument("--limit", type=int, default=0, help="Build only the first N documents.")
+    
+    # Добавляем аргумент для выбора конкретного номера (индекса)
+    # По умолчанию -1, что значит "не выбрано". В дефолт пишем номер вашего документа, например документ за 1900 год - дефолт=5(можно посмотреть в манифесте, какой индекс у нужного документа)
+    parser.add_argument("--doc-index", type=int, default=-1, help="Process only one specific document index (0-based).")
+    
     parser.add_argument(
         "--use-natasha",
         action="store_true",
         help="Enable strict Natasha NER for persName/orgName/placeName/date (with rule-based fallback).",
     )
-    return parser.parse_args()
+    args, _ = parser.parse_known_args()
+    return args
 
 
 def main() -> None:
     args = parse_args()
     configs = load_document_configs(Path(args.manifest), Path(args.output_dir))
-    if args.limit:
+
+    # --- ЛОГИКА ВЫБОРА ДОКУМЕНТОВ ---
+    if args.doc_index != -1:
+        # Если указан конкретный индекс, берем только его
+        if 0 <= args.doc_index < len(configs):
+            print(f"[info] Targeting single document index: {args.doc_index}")
+            configs = [configs[args.doc_index]]
+        else:
+            print(f"[error] Index {args.doc_index} is out of range. Total documents: {len(configs)}")
+            return
+    elif args.limit > 0:
+        # Если индекса нет, но есть лимит — берем срез
         configs = configs[: args.limit]
+    # -------------------------------
+
     natasha_models = get_natasha_models(args.use_natasha)
     if args.use_natasha and natasha_models is None:
         print("[warn] Natasha is unavailable; fallback to rule-based mode.", flush=True)
@@ -1749,7 +1768,6 @@ def main() -> None:
         ET.indent(tree, space="  ")
         tree.write(config.output_xml, encoding="utf-8", xml_declaration=True)
         print(f"[ok] {config.output_xml}")
-
 
 if __name__ == "__main__":
     main()
